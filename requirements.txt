@@ -2,3 +2,4 @@ streamlit
 edge-tts
 asyncio
 moviepy
+pydub
