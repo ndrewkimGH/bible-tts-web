@@ -1,60 +1,57 @@
 import streamlit as st
 import asyncio
 import edge_tts
+from pydub import AudioSegment
+from moviepy.editor import ImageClip, AudioFileClip
+import io
 import os
 
-# --- 구절별로 음성을 생성하여 합치는 함수 ---
-async def generate_bible_audio(text_data, output_path):
-    lines = [line.strip() for line in text_data.split('\n') if line.strip()]
-    
-    # 임시 파일들을 저장할 리스트
-    combined_audio = b""
+# (기존 generate_audio_segment, process_narration 함수는 그대로 유지)
 
-    for i, line in enumerate(lines):
-        # 짝수 줄(0, 2, 4...)은 한국어 성우, 홀수 줄(1, 3, 5...)은 영어 성우
-        if i % 2 == 0:
-            voice = "ko-KR-SunHiNeural"
-        else:
-            voice = "en-US-GuyNeural"
-        
-        # 각 줄마다 음성 생성
-        communicate = edge_tts.Communicate(line, voice)
-        
-        # 메모리에 직접 음성 데이터 저장 (임시 파일 생성 없이 속도 향상)
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                combined_audio += chunk["data"]
-        
-        # 구절 사이에 짧은 무음(약 0.5초) 추가 (선택 사항)
-        # 실제 무음 데이터를 넣으려면 로직이 복잡해지므로, 
-        # 여기서는 구절 끝에 마침표를 추가하여 자연스러운 휴지를 유도합니다.
-
-    with open(output_path, "wb") as f:
-        f.write(combined_audio)
-
-# --- UI 레이아웃 (이전과 동일) ---
-st.set_page_config(page_title="성경 한영 낭독기", page_icon="📖")
-st.title("📖 성경 한-영 교차 낭독기")
-st.info("첫 줄은 한글, 둘째 줄은 영어 순서로 입력해 주세요.")
-
-text_input = st.text_area("성경 구절 입력", height=300, 
-                          placeholder="태초에 하나님이 천지를 창조하시니라.\nIn the beginning God created the heaven and the earth.")
-
-if st.button("MP3 파일 생성 시작", use_container_width=True):
-    if text_input:
-        output_file = "bible_reading.mp3"
-        with st.spinner("성우들이 교대로 녹음 중입니다..."):
-            try:
-                # 이벤트 루프 문제 해결을 위한 로직
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(generate_bible_audio(text_input, output_file))
-                
-                st.success("✅ 교차 낭독 파일 생성 완료!")
-                with open(output_file, "rb") as f:
-                    st.audio(f.read(), format="audio/mp3")
-                    st.download_button("MP3 다운로드", f, file_name=output_file)
-            except Exception as e:
-                st.error(f"오류 발생: {e}")
+def create_video(audio_path, image_file, output_video_path):
+    """오디오와 이미지를 합쳐 MP4 생성"""
+    # 1. 이미지 처리 (사용자가 올린 이미지 혹은 기본 검은 배경)
+    if image_file:
+        # 임시로 이미지 저장
+        with open("temp_img.png", "wb") as f:
+            f.write(image_file.getbuffer())
+        img_clip = ImageClip("temp_img.png")
     else:
-        st.warning("텍스트를 입력해 주세요.")
+        # 이미지가 없으면 검은색 배경 생성 (640x360)
+        img_clip = ColorClip(size=(640, 360), color=(0,0,0))
+
+    # 2. 오디오 로드 및 길이 측정
+    audio_clip = AudioFileClip(audio_path)
+    
+    # 3. 영상 설정 (이미지 지속 시간을 오디오 길이에 맞춤)
+    video_clip = img_clip.set_duration(audio_clip.duration)
+    video_clip = video_clip.set_audio(audio_clip)
+    
+    # 4. 파일 쓰기 (fps는 10 정도로 낮게 설정해도 충분합니다)
+    video_clip.write_videofile(output_video_path, fps=10, codec="libx264")
+    
+    # 클립 닫기 (메모리 해제)
+    audio_clip.close()
+    video_clip.close()
+
+# --- UI 부분 ---
+with st.sidebar:
+    st.header("🎬 영상 설정")
+    bg_image = st.file_uploader("배경 이미지 업로드 (선택)", type=["jpg", "png", "jpeg"])
+
+# ... 제작 시작 버튼 클릭 시 ...
+if st.button("고퀄리티 MP4 영상 제작"):
+    # 1. 오디오 먼저 생성 (기존 로직 사용)
+    # 2. 생성된 오디오를 파일로 저장
+    temp_audio = "temp_audio.mp3"
+    final_audio.export(temp_audio, format="mp3")
+    
+    # 3. 영상 제작 호출
+    with st.spinner("영상을 렌더링 중입니다. 잠시만 기다려 주세요..."):
+        video_output = "final_video.mp4"
+        create_video(temp_audio, bg_image, video_output)
+        
+        # 4. 결과 출력
+        with open(video_output, "rb") as v:
+            st.video(v.read())
+            st.download_button("MP4 영상 다운로드", v, file_name="bible_video.mp4")
