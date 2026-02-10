@@ -1,3 +1,16 @@
+import sys
+
+# --- [중요] Python 3.13+ 호환성 패치 ---
+try:
+    import audioop
+except ImportError:
+    try:
+        import audioop_lpm as audioop
+        sys.modules['audioop'] = audioop
+    except ImportError:
+        pass 
+# --------------------------------------
+
 import streamlit as st
 import asyncio
 import edge_tts
@@ -5,7 +18,6 @@ from pydub import AudioSegment
 from moviepy.editor import ImageClip, AudioFileClip
 import io
 import os
-import sys
 
 # --- 설정 ---
 VOICES = {
@@ -68,8 +80,13 @@ if st.button("MP4 영상 생성 시작", use_container_width=True):
     if text_input and img_upload:
         with st.spinner("1단계: 음성 생성 및 믹싱 중..."):
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # 비동기 루프 설정
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
                 final_audio = loop.run_until_complete(process_narration(
                     text_input, VOICES[chosen_voice], speed, pause_time, bgm_upload
                 ))
@@ -78,26 +95,23 @@ if st.button("MP4 영상 생성 시작", use_container_width=True):
                 final_audio.export(audio_path, format="mp3")
                 
                 with st.spinner("2단계: 영상 렌더링 중 (시간이 소요될 수 있습니다)..."):
-                    # 이미지 임시 저장
                     img_path = "temp_img.png"
                     with open(img_path, "wb") as f:
                         f.write(img_upload.getbuffer())
                     
-                    # MoviePy 영상 제작
                     audio_clip = AudioFileClip(audio_path)
                     img_clip = ImageClip(img_path).set_duration(audio_clip.duration)
                     video_clip = img_clip.set_audio(audio_clip)
                     
                     video_output = "bible_video.mp4"
-                    # 속도를 위해 fps를 낮추고 특정 코덱 사용
-                    video_clip.write_videofile(video_output, fps=5, codec="libx264", audio_codec="aac")
+                    # 최적화된 설정으로 렌더링
+                    video_clip.write_videofile(video_output, fps=5, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True)
                     
                     st.success("🎉 영상 제작 완료!")
                     st.video(video_output)
                     with open(video_output, "rb") as f:
                         st.download_button("MP4 다운로드", f, file_name="bible_audio_video.mp4")
                     
-                    # 임시 파일 삭제
                     audio_clip.close()
                     video_clip.close()
 
