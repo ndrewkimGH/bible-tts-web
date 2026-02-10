@@ -1,5 +1,5 @@
 streamlit
 edge-tts
-asyncio
-moviepy
 pydub
+moviepy
+audioop-lpm
